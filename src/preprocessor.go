@@ -81,7 +81,6 @@ func PreprocessString(src string, output *bufio.Writer, variables map[string]str
 				pushStack(&p, handleIf(&p, l, 5))
 			} else if strings.HasPrefix(l[3:], "elif") {
 				res := handleIf(&p, l, 7)
-				fmt.Println(res)
 				if len(p.scopeStack) < 2 {
 					emitError(&p, PreprocessError{"@elif not inside @if scope", p.line, 1, len(l)})
 				} else if isElseUsed(&p, 0) {
@@ -124,7 +123,7 @@ func PreprocessString(src string, output *bufio.Writer, variables map[string]str
 		} else {
 			fmt.Printf("%-20s | %s\n", fmt.Sprintf("%v", p.scopeStack), l)
 			if !p.invalid && isActive(&p, 0) {
-				p.writer.WriteString(l)
+				p.writer.WriteString(substitute(&p, l))
 				p.writer.WriteString("\n")
 			}
 		}
@@ -237,4 +236,70 @@ func handleIf(p *Preprocessor, l string, start int) bool {
 	}
 	res := p.variables[word1] != "" || p.versions[word1] != 0
 	return res
+}
+
+func substitute(p *Preprocessor, l string) string {
+	entire := l
+	type ReplaceRange struct {
+		from, to int
+	}
+	var inserts []ReplaceRange
+
+	prev := 0
+
+	for {
+		ix := strings.Index(l, "@@(")
+		if ix == -1 {
+			break
+		}
+
+		ix += 3
+		start := ix
+		incorrect := false
+		for {
+			r, n := utf8.DecodeRuneInString(l[ix:])
+
+			if r == utf8.RuneError {
+				emitError(p, PreprocessError{"the insert macro isn't closed", p.line, prev + start, prev + ix})
+				break
+			}
+
+			ix += n
+
+			if unicode.IsDigit(r) || unicode.IsLetter(r) || r == '_' {
+
+			} else if r == ')' {
+				break
+			} else {
+				incorrect = true
+			}
+		}
+
+		if incorrect {
+			emitError(p, PreprocessError{"the insert macro's body must consist of alphanumeric characters or _", p.line, prev + start, prev + ix})
+		} else {
+			inserts = append(inserts, ReplaceRange{prev + start - 3, prev + ix})
+		}
+
+		prev += ix
+		l = l[ix:]
+	}
+
+	var sb strings.Builder
+	prev = 0
+	for _, v := range inserts {
+		id := entire[v.from+3 : v.to-1]
+		insertStr, ok := p.variables[id]
+		if !ok {
+			emitError(p, PreprocessError{"no variable found with this name", p.line, v.from, v.to})
+			continue
+		}
+
+		sb.WriteString(entire[prev:v.from])
+		sb.WriteString(insertStr)
+		prev = v.to
+	}
+	sb.WriteString(entire[prev:])
+
+	return sb.String()
 }

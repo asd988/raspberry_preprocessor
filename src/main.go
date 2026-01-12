@@ -67,7 +67,7 @@ func main() {
 	buf := bufio.NewWriter(f)
 	defer buf.Flush()
 
-	p := PreprocessString(source, buf, nil, m, m["1.20.1"])
+	p := PreprocessString(source, buf, map[string]string{"TEMPLATE_NAME": "Steve", "": "nothing", "GREETINGS": "Hello", "ELSE": "special"}, m, m["1.20.1"])
 	for _, v := range p.errors {
 		fmt.Print(PrettyStringError(v, source))
 	}

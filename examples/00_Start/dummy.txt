@@ -21,4 +21,4 @@ happens otherwise
 
 this always happens
 
-I am @@(TEMPLATE_NAME)
+@@(GREETINGS)! I am @@(TEMPLATE_NAME) and @@() and something else @@(ELSE)
