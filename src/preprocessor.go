@@ -9,6 +9,14 @@ import (
 	"unicode/utf8"
 )
 
+type Scope int
+
+const (
+	ScopeActive = (1 << iota)
+	ScopeBeenActive
+	ScopeElseUsed
+)
+
 type PreprocessError struct {
 	text    string
 	line    int
@@ -19,7 +27,7 @@ type PreprocessError struct {
 type Preprocessor struct {
 	writer         *bufio.Writer
 	source         string
-	scopeStack     []bool
+	scopeStack     []Scope
 	variables      map[string]string
 	versions       map[string]int
 	errors         []PreprocessError
@@ -40,44 +48,82 @@ func emitError(p *Preprocessor, err PreprocessError) {
 	p.errors = append(p.errors, err)
 }
 
+func scopeFromEnd(p *Preprocessor, n int) *Scope {
+	return &p.scopeStack[len(p.scopeStack)-1-n]
+}
+
+func isActive(p *Preprocessor, n int) bool {
+	return *scopeFromEnd(p, n)&ScopeActive != 0
+}
+
+func beenActive(p *Preprocessor, n int) bool {
+	return *scopeFromEnd(p, n)&ScopeBeenActive != 0
+}
+
+func isElseUsed(p *Preprocessor, n int) bool {
+	return *scopeFromEnd(p, n)&ScopeElseUsed != 0
+}
+
 func pushStack(p *Preprocessor, val bool) {
-	p.scopeStack = append(p.scopeStack, p.scopeStack[len(p.scopeStack)-1] && val)
+	if p.scopeStack[len(p.scopeStack)-1]&ScopeActive != 0 && val {
+		p.scopeStack = append(p.scopeStack, ScopeActive|ScopeBeenActive)
+	} else {
+		p.scopeStack = append(p.scopeStack, 0)
+	}
 }
 
 func PreprocessString(src string, output *bufio.Writer, variables map[string]string, versions map[string]int, currentVersion int) Preprocessor {
-	p := Preprocessor{source: src, writer: output, scopeStack: []bool{true}, line: 1, variables: variables, versions: versions, currentVersion: currentVersion}
+	p := Preprocessor{source: src, writer: output, scopeStack: []Scope{ScopeActive}, line: 1, variables: variables, versions: versions, currentVersion: currentVersion}
 
 	for l := range strings.SplitSeq(p.source, "\n") {
 		if acceptControl(l) {
 			if strings.HasPrefix(l[3:], "if") {
-				word1, r1, ok := nextWord(l, 5)
-				// fmt.Printf("'%s' %v\n", word, ok)
-				word2, r2, ok := nextWord(l, r1)
-				// fmt.Printf("'%s' %v\n", word, ok)
-				if ok {
-					var word3 string
-					word3, r3, ok := nextWord(l, r2)
-					if !ok {
-						pushStack(&p, false)
-						emitError(&p, PreprocessError{"unrecognized instruction", p.line, r1 - len(word1), r3})
-					} else {
-						pushStack(&p, handleToExpr(&p, word1, word2, word3, r1, r2, r3))
+				pushStack(&p, handleIf(&p, l, 5))
+			} else if strings.HasPrefix(l[3:], "elif") {
+				res := handleIf(&p, l, 7)
+				fmt.Println(res)
+				if len(p.scopeStack) < 2 {
+					emitError(&p, PreprocessError{"@elif not inside @if scope", p.line, 1, len(l)})
+				} else if isElseUsed(&p, 0) {
+					emitError(&p, PreprocessError{"@elif can't go after an @else", p.line, 1, len(l)})
+				} else if isActive(&p, 1) {
+					end := scopeFromEnd(&p, 0)
+					val := *end
+					if beenActive(&p, 0) {
+						*end = val & ^ScopeActive
+					} else if res {
+						*end = val | ScopeActive | ScopeBeenActive
 					}
-				} else {
-					res := p.variables[word1] != ""
-					pushStack(&p, res)
 				}
-				//fmt.Printf("[%s] [%s] %v\n", word, r, ok)
+			} else if strings.HasPrefix(l[3:], "else") {
+				_, _, ok := nextWord(l, 7)
+				if ok {
+					emitError(&p, PreprocessError{"@else mustn't have any operands", p.line, 1, len(l)})
+				}
+
+				if len(p.scopeStack) < 2 {
+					emitError(&p, PreprocessError{"@else not inside @if scope", p.line, 1, len(l)})
+				} else if isElseUsed(&p, 0) {
+					emitError(&p, PreprocessError{"@else can be used once", p.line, 1, len(l)})
+				} else if isActive(&p, 1) {
+					end := scopeFromEnd(&p, 0)
+					val := *end
+					if beenActive(&p, 0) {
+						*end = val & ^ScopeActive
+					} else {
+						*end = val | ScopeActive | ScopeBeenActive
+					}
+				}
 			} else if strings.HasPrefix(l[3:], "endif") {
-				if len(p.scopeStack) == 1 {
-					emitError(&p, PreprocessError{"@endif closes non-existent if", p.line, 1, len(l)})
+				if len(p.scopeStack) < 2 {
+					emitError(&p, PreprocessError{"@endif closes non-existent @if scope", p.line, 1, len(l)})
 				} else {
 					p.scopeStack = p.scopeStack[:len(p.scopeStack)-1]
 				}
 			}
 		} else {
 			fmt.Printf("%-20s | %s\n", fmt.Sprintf("%v", p.scopeStack), l)
-			if !p.invalid && p.scopeStack[len(p.scopeStack)-1] {
+			if !p.invalid && isActive(&p, 0) {
 				p.writer.WriteString(l)
 				p.writer.WriteString("\n")
 			}
@@ -158,8 +204,6 @@ func handleToExpr(p *Preprocessor, word1, word2, word3 string, r1, r2, r3 int) (
 	fromVersion := getVersion(p, word1, r1, math.MinInt, math.MaxInt)
 	toVersion := getVersion(p, word3, r3, math.MaxInt, math.MinInt)
 
-	fmt.Println(fromVersion, p.currentVersion, toVersion)
-
 	var res bool
 	if fromNotEqual {
 		res = fromVersion < p.currentVersion
@@ -173,5 +217,24 @@ func handleToExpr(p *Preprocessor, word1, word2, word3 string, r1, r2, r3 int) (
 		res = res && p.currentVersion <= toVersion
 	}
 
+	return res
+}
+
+func handleIf(p *Preprocessor, l string, start int) bool {
+	word1, r1, ok := nextWord(l, start)
+	// fmt.Printf("'%s' %v\n", word, ok)
+	word2, r2, ok := nextWord(l, r1)
+	// fmt.Printf("'%s' %v\n", word, ok)
+	if ok {
+		var word3 string
+		word3, r3, ok := nextWord(l, r2)
+		if !ok {
+			emitError(p, PreprocessError{"unrecognized instruction", p.line, r1 - len(word1), r3})
+			return false
+		} else {
+			return handleToExpr(p, word1, word2, word3, r1, r2, r3)
+		}
+	}
+	res := p.variables[word1] != "" || p.versions[word1] != 0
 	return res
 }
