@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"fmt"
 	"math"
 	"strings"
 	"unicode"
@@ -121,7 +120,7 @@ func PreprocessString(src string, output *bufio.Writer, variables map[string]str
 				}
 			}
 		} else {
-			fmt.Printf("%-20s | %s\n", fmt.Sprintf("%v", p.scopeStack), l)
+			//fmt.Printf("%-20s | %s\n", fmt.Sprintf("%v", p.scopeStack), l)
 			if !p.invalid && isActive(&p, 0) {
 				p.writer.WriteString(substitute(&p, l))
 				p.writer.WriteString("\n")

@@ -1,41 +1,15 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
-	"fmt"
+	"flag"
+	"io/fs"
 	"log"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 )
-
-func PrettyStringError(err PreprocessError, src string) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "src:%d:%d: %s error: %s\n", err.line, err.colFrom, "preprocess", err.text)
-	prefix := fmt.Sprintf("%2d | ", err.line)
-	cur := 1
-
-	sb.WriteString(prefix)
-	for v := range strings.SplitSeq(src, "\n") {
-		if cur == err.line {
-			sb.WriteString(v)
-			break
-		}
-		cur += 1
-	}
-	sb.WriteRune('\n')
-
-	for i := 0; i < len(prefix)+err.colFrom; i++ {
-		sb.WriteRune(' ')
-	}
-	for i := 0; i < err.colTo-err.colFrom; i++ {
-		sb.WriteString("^")
-	}
-
-	sb.WriteString(" here\n\n")
-
-	return sb.String()
-}
 
 type Item struct {
 	Id          string `json:"id"`
@@ -43,9 +17,35 @@ type Item struct {
 }
 
 func main() {
-	data, err := os.ReadFile(".rpb_cache/versions.json")
+	versionsPath := flag.String("versions", ".rpb_cache/versions.json", "The path to the versions.json")
+	ext := flag.String("ext", "txt,glsl,vsh,fsh,json", "extensions that the preprocessor will modify (comma separated)")
+	isFile := flag.Bool("f", false, "to preprocess file(s) instead of directories")
+	vars := flag.String("vars", "{}", "json object, with string-string pairs (` can be used for double quotes)")
+	outputPath := flag.String("o", ".rpb_cache/", "The path to the output directory")
+	currentVersion := flag.String("v", "", "The minecraft version to use for processing")
+
+	flag.Parse()
+	log.SetFlags(0)
+
+	args := flag.Args()
+
+	s, err := os.Stat(*outputPath)
 	if err != nil {
-		return
+		log.Fatal(err)
+	} else if !s.IsDir() {
+		log.Fatal("output path must be directory")
+	}
+
+	if *currentVersion == "" {
+		log.Fatal("the current version must be provided")
+	}
+
+	*vars = strings.ReplaceAll(*vars, "`", "\"")
+
+	// Read versions file
+	data, err := os.ReadFile(*versionsPath)
+	if err != nil {
+		log.Fatal("error opening versions file: ", err)
 	}
 
 	var items []Item
@@ -58,18 +58,55 @@ func main() {
 		m[item.Id] = item.DataVersion
 	}
 
-	dataSource, _ := os.ReadFile("./examples/00_Start/dummy.txt")
-	source := string(dataSource)
-
-	f, _ := os.Create("output.txt")
-	defer f.Close()
-
-	buf := bufio.NewWriter(f)
-	defer buf.Flush()
-
-	p := PreprocessString(source, buf, map[string]string{"TEMPLATE_NAME": "Steve", "": "nothing", "GREETINGS": "Hello", "ELSE": "special"}, m, m["1.20.1"])
-	for _, v := range p.errors {
-		fmt.Print(PrettyStringError(v, source))
+	// Parse variables
+	var variables map[string]string
+	err = json.Unmarshal([]byte(*vars), &variables)
+	if err != nil {
+		log.Fatal(err)
 	}
 
+	// Process
+	exts := strings.Split(*ext, ",")
+	failed := false
+	for _, dir := range args {
+		if *isFile {
+			panic("not implemented")
+		} else {
+			base := filepath.Base(dir)
+
+			err := os.RemoveAll(filepath.Join(*outputPath, base))
+			if err != nil && !os.IsNotExist(err) {
+				log.Fatal(err)
+			}
+
+			err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+				if d.IsDir() {
+					return nil
+				}
+				rel, _ := filepath.Rel(dir, path)
+				outputPath := filepath.Join(*outputPath, base, rel)
+				os.MkdirAll(filepath.Dir(outputPath), 0644)
+
+				if !slices.Contains(exts, filepath.Ext(path)[1:]) {
+					err := os.Link(path, outputPath)
+					if err != nil {
+						log.Fatal(err)
+					}
+					return nil
+				}
+
+				//fmt.Println("processing: ", rel)
+				failed = !preprocessFile(path, outputPath, variables, m, m[*currentVersion]) || failed
+
+				return nil
+			})
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
+
+	if failed {
+		os.Exit(1)
+	}
 }
