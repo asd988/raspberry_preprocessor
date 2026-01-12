@@ -233,7 +233,7 @@ func handleIf(p *Preprocessor, l string, start int) bool {
 			return handleToExpr(p, word1, word2, word3, r1, r2, r3)
 		}
 	}
-	res := p.variables[word1] != "" || p.versions[word1] != 0
+	res := p.variables[word1] != "" || p.versions[word1] == p.currentVersion
 	return res
 }
 
