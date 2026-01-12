@@ -229,6 +229,8 @@ func handleIf(p *Preprocessor, l string, start int) bool {
 		if !ok {
 			emitError(p, PreprocessError{"unrecognized instruction", p.line, r1 - len(word1), r3})
 			return false
+		} else if _, _, ok = nextWord(l, r3); ok {
+			emitError(p, PreprocessError{"unrecognized instruction", p.line, r1 - len(word1), len(l)})
 		} else {
 			return handleToExpr(p, word1, word2, word3, r1, r2, r3)
 		}

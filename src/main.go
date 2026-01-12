@@ -3,12 +3,14 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 )
 
 type Item struct {
@@ -66,6 +68,8 @@ func main() {
 	}
 
 	// Process
+	start := time.Now()
+
 	exts := strings.Split(*ext, ",")
 	failed := false
 	for _, dir := range args {
@@ -105,6 +109,8 @@ func main() {
 			}
 		}
 	}
+
+	fmt.Printf("Preprocessing successfully completed in %v", time.Since(start))
 
 	if failed {
 		os.Exit(1)
