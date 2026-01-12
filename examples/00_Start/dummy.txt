@@ -1,3 +1,5 @@
+//@ comments can precede useif directives
+//@dontuseif 1.21.5
 
 //@if SOME_CONDITION
 this is a special text
@@ -19,6 +21,7 @@ below 1.21, happens on 1.20.2 above
 happens otherwise
 //@endif
 
+//@ this is a comment
 this always happens
 
 @@(GREETINGS)! I am @@(TEMPLATE_NAME) and @@() and something else @@(ELSE)

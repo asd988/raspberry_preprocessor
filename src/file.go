@@ -44,18 +44,19 @@ func preprocessFile(sourcePath, outputPath string, variables map[string]string, 
 	var p Preprocessor
 	{
 		f, _ := os.Create(outputPath)
-		defer f.Close()
 
 		buf := bufio.NewWriter(f)
-		defer buf.Flush()
 
 		p = PreprocessString(source, buf, variables, versions, currentVersion)
 		for _, v := range p.errors {
 			fmt.Print(PrettyStringError(v, source, sourcePath))
 		}
+
+		buf.Flush()
+		f.Close()
 	}
 
-	if p.invalid {
+	if p.invalid || p.exclude {
 		os.Remove(outputPath)
 	}
 

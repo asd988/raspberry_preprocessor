@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"math"
 	"strings"
 	"unicode"
@@ -33,6 +34,7 @@ type Preprocessor struct {
 	line           int
 	currentVersion int
 	invalid        bool
+	exclude        bool
 }
 
 func unCR(str string) string {
@@ -74,6 +76,7 @@ func pushStack(p *Preprocessor, val bool) {
 func PreprocessString(src string, output *bufio.Writer, variables map[string]string, versions map[string]int, currentVersion int) Preprocessor {
 	p := Preprocessor{source: src, writer: output, scopeStack: []Scope{ScopeActive}, line: 1, variables: variables, versions: versions, currentVersion: currentVersion}
 
+	firstLine := 1
 	for l := range strings.SplitSeq(p.source, "\n") {
 		if acceptControl(l) {
 			if strings.HasPrefix(l[3:], "if") {
@@ -113,11 +116,31 @@ func PreprocessString(src string, output *bufio.Writer, variables map[string]str
 					}
 				}
 			} else if strings.HasPrefix(l[3:], "endif") {
+				_, _, ok := nextWord(l, 8)
+				if ok {
+					emitError(&p, PreprocessError{"@endif mustn't have any operands", p.line, 1, len(l)})
+				}
+
 				if len(p.scopeStack) < 2 {
 					emitError(&p, PreprocessError{"@endif closes non-existent @if scope", p.line, 1, len(l)})
 				} else {
 					p.scopeStack = p.scopeStack[:len(p.scopeStack)-1]
 				}
+			} else if strings.HasPrefix(l[3:], "useif") {
+				if p.line != firstLine {
+					emitError(&p, PreprocessError{"@useif can only be used on the first line", p.line, 1, len(l)})
+				} else {
+					p.exclude = !handleIf(&p, l, 8)
+				}
+			} else if strings.HasPrefix(l[3:], "dontuseif") {
+				if p.line != firstLine {
+					emitError(&p, PreprocessError{"@dontuseif can only be used on the first line", p.line, 1, len(l)})
+				} else {
+					p.exclude = handleIf(&p, l, 12)
+					fmt.Println(p.exclude)
+				}
+			} else {
+				firstLine += 1
 			}
 		} else {
 			//fmt.Printf("%-20s | %s\n", fmt.Sprintf("%v", p.scopeStack), l)
