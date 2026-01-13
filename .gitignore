@@ -1,3 +1,4 @@
 .rpb_cache/
 output.txt
 examples/assets/
+*.exe

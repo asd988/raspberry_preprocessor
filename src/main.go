@@ -20,7 +20,7 @@ type Item struct {
 
 func main() {
 	versionsPath := flag.String("versions", ".rpb_cache/versions.json", "The path to the versions.json")
-	ext := flag.String("ext", "txt,glsl,vsh,fsh,json", "extensions that the preprocessor will modify (comma separated)")
+	ext := flag.String("ext", "txt,glsl,vsh,fsh,json,mcmeta", "extensions that the preprocessor will modify (comma separated)")
 	isFile := flag.Bool("f", false, "to preprocess file(s) instead of directories")
 	vars := flag.String("vars", "{}", "json object, with string-string pairs (` can be used for double quotes)")
 	outputPath := flag.String("o", ".rpb_cache/", "The path to the output directory")
@@ -110,7 +110,7 @@ func main() {
 		}
 	}
 
-	fmt.Printf("Preprocessing successfully completed in %v", time.Since(start))
+	fmt.Printf("Preprocessing successfully completed in %v\n", time.Since(start))
 
 	if failed {
 		os.Exit(1)
