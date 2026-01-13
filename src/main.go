@@ -110,9 +110,9 @@ func main() {
 		}
 	}
 
-	fmt.Printf("Preprocessing successfully completed in %v\n", time.Since(start))
-
 	if failed {
 		os.Exit(1)
 	}
+
+	fmt.Printf("Preprocessing successfully completed in %v\n", time.Since(start))
 }
