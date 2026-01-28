@@ -76,6 +76,7 @@ func pushStack(p *Preprocessor, val bool) {
 func PreprocessString(src string, output *bufio.Writer, variables map[string]string, versions map[string]int, currentVersion int) Preprocessor {
 	p := Preprocessor{source: src, writer: output, scopeStack: []Scope{ScopeActive}, line: 1, variables: variables, versions: versions, currentVersion: currentVersion}
 
+	isWriterEmpty := true
 	firstLine := 1
 	for l := range strings.SplitSeq(p.source, "\n") {
 		if acceptControl(l) {
@@ -145,8 +146,11 @@ func PreprocessString(src string, output *bufio.Writer, variables map[string]str
 		} else {
 			//fmt.Printf("%-20s | %s\n", fmt.Sprintf("%v", p.scopeStack), l)
 			if !p.invalid && isActive(&p, 0) {
+				if !isWriterEmpty {
+					p.writer.WriteString("\n")
+				}
 				p.writer.WriteString(substitute(&p, l))
-				p.writer.WriteString("\n")
+				isWriterEmpty = false
 			}
 		}
 		p.line += 1
