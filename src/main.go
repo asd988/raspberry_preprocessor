@@ -8,9 +8,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type Item struct {
@@ -71,7 +75,11 @@ func main() {
 	start := time.Now()
 
 	exts := strings.Split(*ext, ",")
-	failed := false
+
+	g := new(errgroup.Group)
+	sem := make(chan struct{}, runtime.NumCPU()*4)
+	var failed atomic.Bool
+
 	for _, dir := range args {
 		if *isFile {
 			panic("not implemented")
@@ -89,18 +97,29 @@ func main() {
 				}
 				rel, _ := filepath.Rel(dir, path)
 				outputPath := filepath.Join(*outputPath, base, rel)
-				os.MkdirAll(filepath.Dir(outputPath), 0644)
 
-				if !slices.Contains(exts, filepath.Ext(path)[1:]) {
-					err := os.Link(path, outputPath)
-					if err != nil {
-						log.Fatal(err)
+				sem <- struct{}{} // acquire slot
+				g.Go(func() error {
+					defer func() { <-sem }() // release slot
+
+					os.MkdirAll(filepath.Dir(outputPath), 0644)
+
+					if !slices.Contains(exts, filepath.Ext(path)[1:]) {
+						err := os.Link(path, outputPath)
+						if err != nil {
+							log.Fatal(err)
+						}
+						return nil
 					}
-					return nil
-				}
 
-				//fmt.Println("processing: ", rel)
-				failed = !preprocessFile(path, outputPath, variables, m, m[*currentVersion]) || failed
+					ok := preprocessFile(path, outputPath, variables, m, m[*currentVersion])
+
+					if !ok {
+						failed.Store(true)
+					}
+
+					return nil
+				})
 
 				return nil
 			})
@@ -110,7 +129,11 @@ func main() {
 		}
 	}
 
-	if failed {
+	if err := g.Wait(); err != nil {
+		log.Fatal(err)
+	}
+
+	if failed.Load() {
 		os.Exit(1)
 	}
 
