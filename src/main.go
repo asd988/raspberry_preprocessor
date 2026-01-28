@@ -92,17 +92,17 @@ func main() {
 			}
 
 			err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-				if d.IsDir() {
-					return nil
-				}
 				rel, _ := filepath.Rel(dir, path)
 				outputPath := filepath.Join(*outputPath, base, rel)
+
+				if d.IsDir() {
+					os.MkdirAll(outputPath, 0644)
+					return nil
+				}
 
 				sem <- struct{}{} // acquire slot
 				g.Go(func() error {
 					defer func() { <-sem }() // release slot
-
-					os.MkdirAll(filepath.Dir(outputPath), 0644)
 
 					if !slices.Contains(exts, filepath.Ext(path)[1:]) {
 						err := os.Link(path, outputPath)
