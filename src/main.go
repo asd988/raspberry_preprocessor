@@ -22,24 +22,55 @@ type Item struct {
 	DataVersion int    `json:"data_version"`
 }
 
+type outputPaths []string
+
+func (v *outputPaths) String() string {
+	return fmt.Sprintf("%v", *v)
+}
+
+func (v *outputPaths) Set(value string) error {
+	*v = append(*v, value)
+	return nil
+}
+
 func main() {
+	var outputPaths outputPaths
+	flag.Var(&outputPaths, "o", "The path to the output directory")
+
 	versionsPath := flag.String("versions", ".rpb_cache/versions.json", "The path to the versions.json")
 	ext := flag.String("ext", "txt,glsl,vsh,fsh,json,mcmeta", "extensions that the preprocessor will modify (comma separated)")
-	isFile := flag.Bool("f", false, "to preprocess file(s) instead of directories")
-	vars := flag.String("vars", "{}", "json object, with string-string pairs (` can be used for double quotes)")
-	outputPath := flag.String("o", ".rpb_cache/", "The path to the output directory")
+	vars := flag.String("vars", "{}", "Json object, with string-string pairs (` can be used for double quotes)")
 	currentVersion := flag.String("v", "", "The minecraft version to use for processing")
+
+	isFile := flag.Bool("f", false, "Whether to preprocess file(s) instead of directories")
+	usePrecisePaths := flag.Bool("precise-paths", false, "When enabled you have to specify an output path for each input directory (eg. -o path1 -o path2)")
 
 	flag.Parse()
 	log.SetFlags(0)
 
 	args := flag.Args()
 
-	s, err := os.Stat(*outputPath)
-	if err != nil {
-		log.Fatal(err)
-	} else if !s.IsDir() {
-		log.Fatal("output path must be directory")
+	if len(outputPaths) == 0 && !*usePrecisePaths {
+		outputPaths = append(outputPaths, ".rpb_cache/")
+	}
+
+	if *usePrecisePaths && len(args) != len(outputPaths) {
+		log.Fatalf("precise paths are enabled so there should be the same amount of output paths as input paths, %d != %d", len(args), len(outputPaths))
+	}
+
+	if !*usePrecisePaths && len(outputPaths) != 1 {
+		log.Fatal("there is only one output path")
+	}
+
+	for _, o := range outputPaths {
+		s, err := os.Stat(o)
+		if os.IsNotExist(err) {
+			os.MkdirAll(o, 0644)
+		} else if err != nil {
+			log.Fatal(err)
+		} else if !s.IsDir() {
+			log.Fatal("output path must be directory")
+		}
 	}
 
 	if *currentVersion == "" {
@@ -80,20 +111,27 @@ func main() {
 	sem := make(chan struct{}, runtime.NumCPU()*4)
 	var failed atomic.Bool
 
-	for _, dir := range args {
+	for i, dir := range args {
 		if *isFile {
 			panic("not implemented")
 		} else {
-			base := filepath.Base(dir)
+			var outDir string
+			if *usePrecisePaths {
+				outDir = outputPaths[i]
+			} else {
+				base := filepath.Base(dir)
+				outDir = filepath.Join(outputPaths[0], base)
+			}
+			fmt.Println(outDir, *usePrecisePaths)
 
-			err := os.RemoveAll(filepath.Join(*outputPath, base))
+			err := os.RemoveAll(outDir)
 			if err != nil && !os.IsNotExist(err) {
 				log.Fatal(err)
 			}
 
 			err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 				rel, _ := filepath.Rel(dir, path)
-				outputPath := filepath.Join(*outputPath, base, rel)
+				outputPath := filepath.Join(outDir, rel)
 
 				if d.IsDir() {
 					os.MkdirAll(outputPath, 0644)
