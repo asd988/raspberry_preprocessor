@@ -185,7 +185,7 @@ func nextWord(str string, cur int) (word string, remainder int, ok bool) {
 	for {
 		r, n := utf8.DecodeRuneInString(str[cur:])
 		if r == utf8.RuneError {
-			return
+			break
 		}
 
 		if !unicode.IsSpace(r) {
@@ -195,7 +195,10 @@ func nextWord(str string, cur int) (word string, remainder int, ok bool) {
 		}
 	}
 
-	return str[start:cur], cur, true
+	if cur > start {
+		return str[start:cur], cur, true
+	}
+	return
 }
 
 func getVersion(p *Preprocessor, word string, r, noBound, failed int) (version int) {

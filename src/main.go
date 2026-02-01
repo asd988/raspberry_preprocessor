@@ -65,7 +65,7 @@ func main() {
 	for _, o := range outputPaths {
 		s, err := os.Stat(o)
 		if os.IsNotExist(err) {
-			os.MkdirAll(o, 0644)
+			os.MkdirAll(o, 0755)
 		} else if err != nil {
 			log.Fatal(err)
 		} else if !s.IsDir() {
@@ -134,7 +134,7 @@ func main() {
 				outputPath := filepath.Join(outDir, rel)
 
 				if d.IsDir() {
-					os.MkdirAll(outputPath, 0644)
+					os.MkdirAll(outputPath, 0755)
 					return nil
 				}
 
