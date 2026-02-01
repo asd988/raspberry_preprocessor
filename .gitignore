@@ -2,3 +2,4 @@
 output.txt
 examples/assets/
 *.exe
+build/
